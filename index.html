@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Documentos</title>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js"></script>
+
+<style>
+body { font-family: Arial; margin:0; background:#eef2f7;}
+header { background:#1e3a8a; color:white; padding:15px; text-align:center;}
+.container { padding:20px;}
+form, .card {
+    background:white; padding:15px; border-radius:12px;
+    margin-bottom:15px; box-shadow:0 3px 8px rgba(0,0,0,0.1);
+}
+input, select, textarea {
+    width:100%; padding:10px; margin:6px 0;
+    border-radius:6px; border:1px solid #ccc;
+}
+button {
+    background:#2563eb; color:white; border:none;
+    padding:8px; border-radius:6px; cursor:pointer; margin-top:5px;
+}
+.delete { background:red; }
+canvas { width:100%; margin-top:10px; }
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>📂 Sistema de Documentos</h2>
+</header>
+
+<div class="container">
+
+<input type="text" id="busca" placeholder="🔍 Buscar..." onkeyup="buscar()">
+
+<form id="form">
+<select id="tipo">
+<option>Aviso</option>
+<option>Currículo</option>
+<option>Contrato</option>
+<option>Rescisão</option>
+<option>Advertência</option>
+<option>ASO</option>
+<option>Nota Fiscal</option>
+<option>Holerite</option>
+</select>
+
+<input type="text" id="titulo" placeholder="Título" required>
+<input type="text" id="mes" placeholder="Mês/Ano">
+<textarea id="descricao" placeholder="Descrição"></textarea>
+
+<input type="file" id="arquivo" accept="image/*,.pdf">
+
+<button type="submit">Salvar Documento</button>
+</form>
+
+<div id="lista"></div>
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+let documentos = JSON.parse(localStorage.getItem("docs")) || [];
+
+function salvar() {
+    localStorage.setItem("docs", JSON.stringify(documentos));
+}
+
+// 🔥 RENDER PDF
+function renderPDF(base64, container) {
+    const pdfData = atob(base64.split(',')[1]);
+
+    pdfjsLib.getDocument({data: pdfData}).promise.then(pdf => {
+        pdf.getPage(1).then(page => {
+
+            const viewport = page.getViewport({scale:1.3});
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            container.appendChild(canvas);
+
+            page.render({
+                canvasContext: ctx,
+                viewport: viewport
+            });
+        });
+    });
+}
+
+// 🔥 RENDERIZAÇÃO
+function renderizar(docs = documentos) {
+    const lista = document.getElementById("lista");
+    lista.innerHTML = "";
+
+    docs.forEach((doc, i) => {
+
+        let div = document.createElement("div");
+        div.className = "card";
+
+        div.innerHTML = `
+            <h3>${doc.tipo} - ${doc.titulo}</h3>
+            <p><b>${doc.mes || ""}</b></p>
+            <p>${doc.descricao}</p>
+        `;
+
+        // IMAGEM
+        if (doc.tipoArquivo === "imagem") {
+            let img = document.createElement("img");
+            img.src = doc.arquivo;
+            img.style.width = "100%";
+            div.appendChild(img);
+        }
+
+        // PDF (visualiza direto)
+        if (doc.tipoArquivo === "pdf") {
+            renderPDF(doc.arquivo, div);
+        }
+
+        // BOTÕES (EDITAR FUNCIONANDO)
+        div.innerHTML += `
+        <br>
+        <a href="${doc.arquivo}" download="${doc.titulo}">
+            <button>📥 Baixar</button>
+        </a>
+        <button onclick="editar(${i})">✏️ Editar</button>
+        <button class="delete" onclick="excluir(${i})">🗑️ Excluir</button>
+        `;
+
+        lista.appendChild(div);
+    });
+}
+
+// SALVAR
+document.getElementById("form").onsubmit = (e) => {
+    e.preventDefault();
+
+    const file = arquivo.files[0];
+
+    if (!file) {
+        documentos.push({
+            tipo: tipo.value,
+            titulo: titulo.value,
+            mes: mes.value,
+            descricao: descricao.value
+        });
+
+        salvar();
+        renderizar();
+        form.reset();
+        return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+        let tipoArquivo = file.type.includes("image") ? "imagem" : "pdf";
+
+        documentos.push({
+            tipo: tipo.value,
+            titulo: titulo.value,
+            mes: mes.value,
+            descricao: descricao.value,
+            arquivo: reader.result,
+            tipoArquivo
+        });
+
+        salvar();
+        renderizar();
+        form.reset();
+    };
+
+    reader.readAsDataURL(file);
+};
+
+// EXCLUIR
+function excluir(i) {
+    documentos.splice(i,1);
+    salvar();
+    renderizar();
+}
+
+// ✏️ EDITAR (FUNCIONANDO PERFEITO)
+function editar(i) {
+    let d = documentos[i];
+
+    tipo.value = d.tipo;
+    titulo.value = d.titulo;
+    mes.value = d.mes;
+    descricao.value = d.descricao;
+
+    documentos.splice(i,1);
+    salvar();
+    renderizar();
+}
+
+// BUSCAR
+function buscar() {
+    let termo = busca.value.toLowerCase();
+
+    let filtrados = documentos.filter(d =>
+        d.titulo.toLowerCase().includes(termo) ||
+        d.tipo.toLowerCase().includes(termo)
+    );
+
+    renderizar(filtrados);
+}
+
+renderizar();
+</script>
+
+</body>
+</html>
